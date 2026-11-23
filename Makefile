@@ -52,12 +52,15 @@ check:
 	@command -v $(firstword $(KVM)) >/dev/null || (echo "$(firstword $(KVM)) not installed" && exit 1)
 	@test -e /dev/kvm || (echo "KVM unavailable (/dev/kvm not found)" && exit 1)
 	@echo "Instance $(INSTANCE) is ready."
-
 # Start VM (headless)
 start: check
 	@mkdir -p "$(PID_DIR)"
 	@if [ -f "$(PIDFILE)" ] && kill -0 "$$(cat "$(PIDFILE)")" 2>/dev/null; then \
-		echo "$(VM_NAME) is already running."; exit 0; \
+		echo "$(VM_NAME) is already running."; \
+		if [ "$(WAIT)" = "1" ]; then \
+			"$(PROJECT_DIR)/scripts/status.sh" --wait "$(VM_NAME)" "$(PIDFILE)" "$(SSH_PORT)" "$(WAIT_TIMEOUT)"; \
+		fi; \
+		exit 0; \
 	fi
 	@if [ -n "$(SSH_USER)" ]; then \
 		printf '%s\n' "$(SSH_USER)" > "$(USER_FILE)"; \
@@ -73,6 +76,9 @@ start: check
 	fi
 	@rm -f "$(STOPPING_FILE)"
 	$(KVM) $(KVM_FLAGS) -display none -daemonize
+	@if [ "$(WAIT)" = "1" ]; then \
+		"$(PROJECT_DIR)/scripts/status.sh" --wait "$(VM_NAME)" "$(PIDFILE)" "$(SSH_PORT)" "$(WAIT_TIMEOUT)"; \
+	fi
 
 # Start VM with display window
 display: check

@@ -1,50 +1,40 @@
+# ==========================================
+# VMLabs - Zsh CLI Wrapper & Tab Completion
+# ==========================================
+
 export VMLABS_DIR="${${(%):-%x}:A:h:h}"
-export VMLABS_DEFAULT_FILE="$VMLABS_DIR/.default"alias vmlab='cd "$VMLABS_DIR"'
+export VMLABS_DEFAULT_FILE="$VMLABS_DIR/.default"
 
-unalias vm 2>/dev/null
+alias vmlab='cd "$VMLABS_DIR"'
+
 vm() {
-  local cmd="$1"
-  local instance="$2"
-
-  if [[ -z "$cmd" || "$cmd" == "-h" || "$cmd" == "--help" || "$cmd" == "help" ]]; then
-    echo "Usage: vm <command> [instance]"
-    echo ""
-    echo "Commands:"
-    echo "  use [instance]      Set or show the default instance"
-    echo "  list                List available instances"
-    echo "  status [instance]   Show status (all instances if omitted)"
-    echo "  check [instance]    Validate instance config and disk"
-    echo "  start [instance]    Start VM in background (headless)"
-    echo "  display [instance]  Start VM with a display window"
-    echo "  stop [instance]     Gracefully shut down VM via SSH"
-    echo "  restart [instance]  Stop and start VM"
-    echo "  console [instance]  SSH into VM"
-    echo "  backup [instance]   Create qcow2 backup (VM must be stopped)"
-    return 0
-  fi
+  local cmd="${1:-help}"
 
   case "$cmd" in
     use)
-      if [[ -z "$instance" ]]; then
+      local target="${2:-}"
+      if [[ -z "$target" ]]; then
         if [[ -s "$VMLABS_DEFAULT_FILE" ]]; then
-          echo "Default instance: $(<"$VMLABS_DEFAULT_FILE")"
+          echo "Default VM instance: $(cat "$VMLABS_DEFAULT_FILE")"
         else
-          echo "No default instance set. Run: vm use <instance>"
+          echo "No default VM instance set. Run: vm use <instance>"
         fi
         return 0
       fi
 
-      if [[ ! -f "$VMLABS_DIR/instances/${instance}.mk" ]]; then
-        echo "Error: instance '$instance' not found in $VMLABS_DIR/instances/" >&2
+      if [[ ! -f "$VMLABS_DIR/instances/${target}.mk" ]]; then
+        echo "Instance not found: $target" >&2
         return 1
       fi
 
-      print -r -- "$instance" > "$VMLABS_DEFAULT_FILE"
-      echo "Default instance set to: $instance"
+      printf '%s\n' "$target" > "$VMLABS_DEFAULT_FILE"
+      echo "Default VM instance set to: $target"
       ;;
+
     list)
       make -C "$VMLABS_DIR" --no-print-directory list
       ;;
+
     status)
       local watch_mode=0 interval=2 target=""
       shift
@@ -52,7 +42,7 @@ vm() {
         case "$1" in
           -w|--watch) watch_mode=1 ;;
           -n|--interval)
-            if [[ -n "$2" ]]; then
+            if [[ -n "${2:-}" ]]; then
               interval="$2"
               shift
             fi
@@ -71,6 +61,7 @@ vm() {
             echo "No VM instances found in $VMLABS_DIR/instances/"
             return 0
           fi
+
           "$VMLABS_DIR/scripts/status.sh" --header
           local f name
           for f in "${files[@]}"; do
@@ -110,49 +101,111 @@ vm() {
         done
       )
       ;;
-    check|start|display|stop|restart|console|backup)
-      if [[ -z "$instance" && -s "$VMLABS_DEFAULT_FILE" ]]; then
-        instance="$(<"$VMLABS_DEFAULT_FILE")"
-      fi
 
-      if [[ -z "$instance" ]]; then
-        echo "Error: specify an instance or set a default with 'vm use <instance>'" >&2
-        return 1
-      fi
+    start)
+      local wait_flag=0 timeout="" target=""
+      shift
+      while (( $# > 0 )); do
+        case "$1" in
+          -aw|--await) wait_flag=1 ;;
+          -t|--timeout)
+            if [[ -n "${2:-}" ]]; then
+              timeout="$2"
+              shift
+            fi
+            ;;
+          *) target="$1" ;;
+        esac
+        shift
+      done
 
-      make -C "$VMLABS_DIR" --no-print-directory "$cmd" INSTANCE="$instance"
+      local -a make_args=( -C "$VMLABS_DIR" --no-print-directory start )
+      [[ -n "$target" ]] && make_args+=( INSTANCE="$target" )
+      (( wait_flag )) && make_args+=( WAIT=1 )
+      [[ -n "$timeout" ]] && make_args+=( WAIT_TIMEOUT="$timeout" )
+
+      make "${make_args[@]}"
       ;;
+
+    display|check|stop|restart|console|backup)
+      local target="${2:-}"
+      if [[ -n "$target" ]]; then
+        make -C "$VMLABS_DIR" --no-print-directory "$cmd" INSTANCE="$target"
+      else
+        make -C "$VMLABS_DIR" --no-print-directory "$cmd"
+      fi
+      ;;
+
+    help|-h|--help)
+      echo "VMLabs - Multi-instance KVM/QEMU Manager"
+      echo ""
+      echo "Usage: vm <command> [options] [instance]"
+      echo ""
+      echo "Commands:"
+      echo "  use [instance]                    Set or show the default VM instance"
+      echo "  list                              List all configured instances"
+      echo "  status [-w] [-n sec] [instance]   Show status (-w to watch live)"
+      echo "  check [instance]                  Validate profile, disk, and KVM"
+      echo "  start [-aw] [-t sec] [instance]   Start headless (-aw to wait until running)"
+      echo "  display [instance]                Start with a graphical display window"
+      echo "  console [instance]                Connect to the VM via SSH"
+      echo "  stop [instance]                   Gracefully shut down via SSH"
+      echo "  restart [instance]                Stop and restart the VM"
+      echo "  backup [instance]                 Create a qcow2 backup (VM must be stopped)"
+      echo "  help                              Show this help message"
+      ;;
+
     *)
-      echo "Unknown command: $cmd (run 'vm help')" >&2
+      echo "Unknown command: $cmd" >&2
+      echo "Run 'vm help' to see available commands." >&2
       return 1
       ;;
   esac
 }
 
-# Zsh tab-completion for `vm`
-_vm() {
-  local -a commands instances
+# ==========================================
+# Zsh Tab Completion
+# ==========================================
 
+_vm() {
+  local -a commands instances flags
   commands=(
-    'use:Set or show the default instance'
-    'list:List available instances'
-    'status:Show VM running status'
-    'check:Validate instance config and disk'
-    'start:Start VM in background'
+    'use:Set or show the default VM instance'
+    'list:List all configured instances'
+    'status:Show VM status (-w to watch live)'
+    'check:Validate profile, disk, and KVM'
+    'start:Start VM headless (-aw to await boot)'
     'display:Start VM with display window'
-    'stop:Gracefully shut down VM via SSH'
-    'restart:Restart VM'
-    'console:SSH into VM'
-    'backup:Backup qcow2 disk'
-    'help:Show usage'
+    'console:Connect to the VM via SSH'
+    'stop:Gracefully shut down the VM'
+    'restart:Stop and restart the VM'
+    'backup:Create a qcow2 backup'
+    'help:Show usage help'
   )
 
   if (( CURRENT == 2 )); then
-    _describe 'command' commands
-  elif (( CURRENT == 3 )) && [[ "${words[2]}" != "list" && "${words[2]}" != "help" ]]; then
-    instances=( "$VMLABS_DIR"/instances/*.mk(N:t:r) )
-    _describe 'instance' instances
+    _describe -t commands 'vm commands' commands
+    return
   fi
+
+  local subcmd="${words[2]}"
+  instances=( "$VMLABS_DIR"/instances/*.mk(N:t:r) )
+
+  case "$subcmd" in
+    status)
+      flags=( '-w:Watch status live' '--watch:Watch status live' '-n:Polling interval in seconds' '--interval:Polling interval in seconds' )
+      _describe -t flags 'status options' flags
+      _describe -t instances 'vm instances' instances
+      ;;
+    start)
+      flags=( '-aw:Wait until SSH is ready' '--await:Wait until SSH is ready' '-t:Timeout in seconds' '--timeout:Timeout in seconds' )
+      _describe -t flags 'start options' flags
+      _describe -t instances 'vm instances' instances
+      ;;
+    use|check|display|console|stop|restart|backup)
+      _describe -t instances 'vm instances' instances
+      ;;
+  esac
 }
 
 (( $+functions[compdef] )) && compdef _vm vm

@@ -1,6 +1,7 @@
 # Runtime state
 run/
 .defaultalias
+.default
 
 
 # Large disk and ISO binaries
