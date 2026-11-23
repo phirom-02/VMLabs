@@ -1,0 +1,8 @@
+VM_NAME          := debian-lab
+DISK             := disks/debian-lab.qcow2
+RAM              := 2048
+CPUS             := 2
+DEFAULT_SSH_USER := admin
+SSH_PORT         := 2222
+HTTP_PORT        := 8080
+NETWORK_MODEL    := virtio-net-pci

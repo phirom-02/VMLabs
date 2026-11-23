@@ -1,0 +1,12 @@
+# Runtime state
+run/
+.default
+
+# Large disk and ISO binaries
+disks/*.qcow2
+iso/*.iso
+backups/
+
+# Personal VM profiles (keep *.example tracked)
+instances/*.mk
+!instances/*.mk.example
