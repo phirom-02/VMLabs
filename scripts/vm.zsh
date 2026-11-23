@@ -46,15 +46,69 @@ vm() {
       make -C "$VMLABS_DIR" --no-print-directory list
       ;;
     status)
-      if [[ -n "$instance" ]]; then
-        make -C "$VMLABS_DIR" --no-print-directory status INSTANCE="$instance"
-      else
-        local f name
-        for f in "$VMLABS_DIR"/instances/*.mk(N); do
-          name="${f:t:r}"
-          make -C "$VMLABS_DIR" --no-print-directory status INSTANCE="$name"
-        done
+      local watch_mode=0 interval=2 target=""
+      shift
+      while (( $# > 0 )); do
+        case "$1" in
+          -w|--watch) watch_mode=1 ;;
+          -n|--interval)
+            if [[ -n "$2" ]]; then
+              interval="$2"
+              shift
+            fi
+            ;;
+          *) target="$1" ;;
+        esac
+        shift
+      done
+
+      if (( ! watch_mode )); then
+        if [[ -n "$target" ]]; then
+          make -C "$VMLABS_DIR" --no-print-directory status INSTANCE="$target"
+        else
+          local -a files=( "$VMLABS_DIR"/instances/*.mk(N) )
+          if (( ${#files} == 0 )); then
+            echo "No VM instances found in $VMLABS_DIR/instances/"
+            return 0
+          fi
+          "$VMLABS_DIR/scripts/status.sh" --header
+          local f name
+          for f in "${files[@]}"; do
+            name="${f:t:r}"
+            make -C "$VMLABS_DIR" --no-print-directory status INSTANCE="$name" NO_HEADER=1
+          done
+        fi
+        return 0
       fi
+
+      # Live polling loop in a subshell so Ctrl+C exits cleanly without altering shell traps
+      (
+        trap 'exit 0' INT
+        local out f name row
+        local -a files
+        while true; do
+          if [[ -n "$target" ]]; then
+            out="$(make -C "$VMLABS_DIR" --no-print-directory status INSTANCE="$target" FORCE_COLOR=1)"
+          else
+            files=( "$VMLABS_DIR"/instances/*.mk(N) )
+            if (( ${#files} == 0 )); then
+              out="No VM instances found in $VMLABS_DIR/instances/"
+            else
+              out="$(FORCE_COLOR=1 "$VMLABS_DIR/scripts/status.sh" --header)"
+              for f in "${files[@]}"; do
+                name="${f:t:r}"
+                row="$(make -C "$VMLABS_DIR" --no-print-directory status INSTANCE="$name" NO_HEADER=1 FORCE_COLOR=1)"
+                out+=$'\n'"$row"
+              done
+            fi
+          fi
+
+          printf '\033[H\033[2J'
+          printf 'VMLabs Status (every %ss | %s | Ctrl+C to exit)\n\n' "$interval" "$(date +%H:%M:%S)"
+          printf '%s\n' "$out"
+          sleep "$interval"
+        done
+      )
       ;;
     check|start|display|stop|restart|console|backup)
       if [[ -z "$instance" && -s "$VMLABS_DEFAULT_FILE" ]]; then

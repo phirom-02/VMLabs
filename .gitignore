@@ -1,6 +1,7 @@
 # Runtime state
 run/
-.default
+.defaultalias
+
 
 # Large disk and ISO binaries
 disks/*.qcow2

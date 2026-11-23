@@ -97,7 +97,7 @@ display: check
 
 # VM status
 status:
-	@NO_HEADER="$(NO_HEADER)" "$(PROJECT_DIR)/scripts/status.sh" "$(VM_NAME)" "$(PIDFILE)" "$(STOPPING_FILE)" "$(SSH_PORT)"
+	@NO_HEADER="$(NO_HEADER)" FORCE_COLOR="$(FORCE_COLOR)" "$(PROJECT_DIR)/scripts/status.sh" "$(VM_NAME)" "$(PIDFILE)" "$(STOPPING_FILE)" "$(SSH_PORT)"
 
 # SSH connection
 console:

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Enable ANSI colors only on interactive terminals (and respect NO_COLOR)
-if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+if [[ (-t 1 || "${FORCE_COLOR:-0}" == "1") && -z "${NO_COLOR:-}" ]]; then
   BOLD='\033[1m'
   GREEN='\033[1;32m'
   YELLOW='\033[1;33m'
